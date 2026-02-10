@@ -131,7 +131,7 @@ def _validate_chunk_output_template_config(*, config: dict[str, Any], output_pat
     ext = output.suffix.lstrip(".")
     stem = output.stem
     try:
-        render_filename(
+        rendered = render_filename(
             template,
             stem=stem,
             ext=ext,
@@ -139,6 +139,7 @@ def _validate_chunk_output_template_config(*, config: dict[str, Any], output_pat
             chunk_start=0,
             chunk_end=1,
         )
+        _validate_chunk_output_filename(filename=rendered)
     except ValueError as exc:
         raise ValueError(
             format_user_error(
@@ -150,6 +151,20 @@ def _validate_chunk_output_template_config(*, config: dict[str, Any], output_pat
                 ),
             )
         ) from exc
+
+
+def _validate_chunk_output_filename(*, filename: str) -> None:
+    """Ensure rendered chunk output filename stays within output directory."""
+    candidate = Path(filename)
+    if candidate.is_absolute() or len(candidate.parts) != 1 or candidate.name in {"", ".", ".."}:
+        raise ValueError(
+            format_user_error(
+                what="output_chunk_template produced an unsafe path.",
+                why="chunk output files must be plain filenames under the output directory",
+                how_to_fix="remove path separators and traversal segments from output_chunk_template",
+            )
+        )
+
 
 
 def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
@@ -214,6 +229,7 @@ def _write_chunk_outputs_if_configured(
             ext=ext,
             **chunk_template_values(chunk=chunk),
         )
+        _validate_chunk_output_filename(filename=filename)
         write_transcript(output_path=output.parent / filename, transcript=payload["transcript"])
 
 
