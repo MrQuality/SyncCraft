@@ -59,3 +59,9 @@ SyncCraft does **not** bundle FFmpeg in wheels or standalone binaries.
 - If future workflows add FFmpeg-backed transcoding/probing, users must install FFmpeg separately via their OS package manager (for example `apt`, `brew`, or `choco`) and ensure `ffmpeg`/`ffprobe` are available on `PATH`.
 
 Rationale: keeping FFmpeg external avoids license/binary-size complications and keeps package artifacts lightweight.
+
+
+## Related guides
+
+- For an end-to-end first run, see [`docs/tutorial.md`](./tutorial.md).
+- For credential lifecycle and secure API key usage, see [`docs/api-keys.md`](./api-keys.md).

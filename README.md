@@ -23,6 +23,16 @@ SyncCraft is a lightweight Python CLI foundation for media-transcript workflows 
   - Behavior-change test enforcement script: `scripts/check_changed_behavior_has_tests.py`
   - Contributor policy in `CONTRIBUTING.md`
 
+## Documentation hub
+
+For end-user and operator documentation, start here:
+
+- [Installation guide](docs/installation.md)
+- [Step-by-step tutorial](docs/tutorial.md)
+- [API key and credential management](docs/api-keys.md)
+- [Configuration examples](docs/config.examples.yaml)
+- [Architecture notes](docs/architecture.md)
+
 ## Packaging and installation
 
 Build and installable package guidance (including runtime dependency and FFmpeg policy) is documented in [`docs/installation.md`](docs/installation.md).
@@ -46,7 +56,7 @@ synccraft --version
 python -m pip install -e .[dev]
 ```
 
-## Quickstart: first successful render in under 5 minutes
+## Quickstart: first successful render in under 5 minutes (mock provider)
 
 This quickstart uses repository fixtures and the `mock` provider so you can validate end-to-end behavior quickly.
 
@@ -82,6 +92,8 @@ cat /tmp/synccraft.quickstart.txt
 ```
 
 Expected result: SyncCraft prints progress events and writes a transcript file.
+
+For a full walkthrough (including chunking and `omni` provider setup), see [docs/tutorial.md](docs/tutorial.md).
 
 ## Security notes
 
