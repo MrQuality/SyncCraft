@@ -14,7 +14,7 @@ from synccraft.chunking import ChunkMetadata, chunk_template_values, execute_chu
 from synccraft.errors import format_user_error
 from synccraft.media import WaveDurationExtractor, validate_audio_path, validate_image_path
 from synccraft.output import write_transcript
-from synccraft.provider import MockProviderAdapter
+from synccraft.provider import MockProviderAdapter, ProviderAdapter, build_provider_adapter
 from synccraft.templating import render_filename
 
 _VERSION = "0.1.0"
@@ -81,20 +81,21 @@ def _validate_path_exists(*, value: str, field_name: str) -> None:
         )
 
 
-def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]) -> tuple[str, str]:
+def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]) -> tuple[str | None, str]:
     """Validate required CLI and config inputs before execution."""
     validate_image_path(image)
     validate_audio_path(audio)
 
+    provider_name = str(config.get("provider", "omni")).strip().lower()
     provider_payload = config.get("provider_payload")
     output_path = config.get("output")
 
-    if not provider_payload:
+    if provider_name == "mock" and not provider_payload:
         raise ValueError(
             format_user_error(
                 what="missing required config key: provider_payload.",
                 why="provider payload path is needed for mock transcription",
-                how_to_fix="add provider_payload: <json-file> to your config",
+                how_to_fix="add provider_payload: <json-file> to your config or use provider: omni",
             )
         )
 
@@ -107,9 +108,10 @@ def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]
             )
         )
 
-    _validate_path_exists(value=provider_payload, field_name="provider_payload")
+    if provider_name == "mock":
+        _validate_path_exists(value=str(provider_payload), field_name="provider_payload")
     _validate_chunk_output_template_config(config=config, output_path=str(output_path))
-    return str(provider_payload), str(output_path)
+    return (str(provider_payload) if provider_payload else None), str(output_path)
 
 
 def _validate_chunk_output_template_config(*, config: dict[str, Any], output_path: str) -> None:
@@ -167,9 +169,9 @@ def _validate_chunk_output_filename(*, filename: str) -> None:
 
 
 
-def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
+def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, Any], adapter: ProviderAdapter) -> None:
     """Fail fast when the source duration exceeds provider limit without chunking."""
-    max_audio_seconds = adapter.get_max_audio_seconds()
+    max_audio_seconds = adapter.limits().max_audio_seconds
     if max_audio_seconds is None:
         return
 
@@ -198,13 +200,15 @@ def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, A
     )
 
 
-def _print_execution_summary(*, image: str, audio: str, config_path: str, output: str, provider_payload: str) -> None:
+def _print_execution_summary(*, image: str, audio: str, config_path: str, output: str, provider: str, provider_payload: str | None) -> None:
     """Print a concise execution summary for dry-run and transparency."""
     print("SyncCraft execution summary")
     print(f"  image: {image}")
     print(f"  audio: {audio}")
     print(f"  config: {config_path}")
-    print(f"  provider_payload: {provider_payload}")
+    print(f"  provider: {provider}")
+    if provider_payload is not None:
+        print(f"  provider_payload: {provider_payload}")
     print(f"  output: {output}")
 
 
@@ -233,7 +237,7 @@ def _write_chunk_outputs_if_configured(
         write_transcript(output_path=output.parent / filename, transcript=payload["transcript"])
 
 
-def _run_chunked_transcription(*, audio_path: str, output_path: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
+def _run_chunked_transcription(*, image_path: str, audio_path: str, output_path: str, config: dict[str, Any], adapter: ProviderAdapter) -> None:
     """Execute chunked transcription flow with configurable failure policy."""
     logger = logging.getLogger(__name__)
     total_seconds = WaveDurationExtractor().duration_seconds(audio_path)
@@ -248,7 +252,7 @@ def _run_chunked_transcription(*, audio_path: str, output_path: str, config: dic
             chunk.start_second,
             chunk.end_second,
         )
-        return adapter.transcribe(audio_path=audio_path, chunk=chunk)
+        return adapter.generate(image=image_path, audio_chunk=audio_path, chunk=chunk)
 
     result = execute_chunk_plan(chunks=chunks, transcribe_chunk=_transcribe, on_chunk_failure=on_chunk_failure)
 
@@ -294,11 +298,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = _load_config(path=args.config)
         provider_payload, output_path = _validate_execution_inputs(image=args.image, audio=args.audio, config=config)
+        provider_name = str(config.get("provider", "omni")).strip().lower()
         _print_execution_summary(
             image=args.image,
             audio=args.audio,
             config_path=args.config,
             output=output_path,
+            provider=provider_name,
             provider_payload=provider_payload,
         )
 
@@ -306,17 +312,18 @@ def main(argv: list[str] | None = None) -> int:
             logging.getLogger(__name__).info("Dry-run mode enabled; skipping provider calls")
             return 0
 
-        adapter = MockProviderAdapter(payload_file=provider_payload)
-        adapter.validate_chunking_payload_schema()
+        adapter = build_provider_adapter(config=config)
+        if isinstance(adapter, MockProviderAdapter):
+            adapter.validate_chunking_payload_schema()
         _validate_duration_against_provider_limit(audio=args.audio, config=config, adapter=adapter)
 
         chunk_seconds = config.get("chunk_seconds")
         chunking_configured = isinstance(chunk_seconds, int) and chunk_seconds > 0
         if chunking_configured:
-            _run_chunked_transcription(audio_path=args.audio, output_path=output_path, config=config, adapter=adapter)
+            _run_chunked_transcription(image_path=args.image, audio_path=args.audio, output_path=output_path, config=config, adapter=adapter)
             return 0
 
-        result = adapter.transcribe(audio_path=args.audio)
+        result = adapter.generate(image=args.image, audio_chunk=args.audio)
         write_transcript(output_path=output_path, transcript=result["transcript"])
         return 0
     except ValueError as exc:

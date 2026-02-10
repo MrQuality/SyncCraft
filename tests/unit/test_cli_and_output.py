@@ -9,7 +9,7 @@ import pytest
 
 from synccraft.cli import _validate_duration_against_provider_limit, main
 from synccraft.output import write_transcript
-from synccraft.provider import MockProviderAdapter
+from synccraft.provider import MockProviderAdapter, OmniProviderAdapter, build_provider_adapter
 
 
 def _write_wav_with_duration(path, *, seconds: int, frame_rate: int = 8000) -> None:
@@ -38,7 +38,7 @@ def test_cli_main_success_path(tmp_path) -> None:
     payload.write_text(json.dumps({"transcript": "ok", "confidence": 0.2}), encoding="utf-8")
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     rc = main([str(image), str(audio), "--config", str(config)])
 
@@ -55,7 +55,7 @@ def test_cli_main_handles_provider_error_with_user_message(tmp_path, capsys) -> 
     payload = tmp_path / "payload.json"
     payload.write_text("{}", encoding="utf-8")
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {tmp_path / 'output.txt'}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {tmp_path / 'output.txt'}\n", encoding="utf-8")
 
     rc = main([str(image), str(audio), "--config", str(config)])
 
@@ -74,7 +74,7 @@ def test_cli_main_dry_run_skips_provider_calls(tmp_path, monkeypatch, capsys) ->
     payload.write_text("not-json", encoding="utf-8")
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     def _should_not_be_called(self, *, audio_path):  # pragma: no cover - defensive
         raise AssertionError("provider call should be skipped during dry-run")
@@ -132,7 +132,7 @@ def test_cli_main_fails_fast_on_invalid_output_chunk_template(tmp_path, capsys) 
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"provider_payload: {payload}\n"
+        f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
         "output_chunk_template: 123\n",
         encoding="utf-8",
@@ -155,7 +155,7 @@ def test_cli_main_fails_fast_on_invalid_fail_on_chunk_indices_schema(tmp_path, c
     payload.write_text(json.dumps({"transcript": "ok", "fail_on_chunk_indices": ["1"]}), encoding="utf-8")
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     rc = main([str(image), str(audio), "--config", str(config)])
 
@@ -177,7 +177,7 @@ def test_cli_main_fails_fast_on_invalid_chunk_transcripts_schema(tmp_path, capsy
     )
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     rc = main([str(image), str(audio), "--config", str(config)])
 
@@ -197,7 +197,7 @@ def test_cli_main_rejects_output_chunk_template_with_path_separator(tmp_path, ca
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"provider_payload: {payload}\n"
+        f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
         "output_chunk_template: '{stem}/chunk_{index}.{ext}'\n",
         encoding="utf-8",
@@ -221,7 +221,7 @@ def test_cli_main_rejects_output_chunk_template_with_parent_traversal(tmp_path, 
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"provider_payload: {payload}\n"
+        f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
         "output_chunk_template: '../chunk_{index}.{ext}'\n",
         encoding="utf-8",
@@ -232,3 +232,28 @@ def test_cli_main_rejects_output_chunk_template_with_parent_traversal(tmp_path, 
     stderr = capsys.readouterr().err
     assert rc == 2
     assert "output_chunk_template produced an unsafe path" in stderr
+
+
+@pytest.mark.unit
+def test_build_provider_adapter_defaults_to_omni() -> None:
+    """Provider factory uses omni when no provider is configured."""
+    adapter = build_provider_adapter(config={})
+
+    assert isinstance(adapter, OmniProviderAdapter)
+
+
+@pytest.mark.unit
+def test_cli_main_uses_default_omni_provider_without_payload(tmp_path) -> None:
+    """CLI can execute with default omni provider and no payload fixture."""
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"output: {output}\n", encoding="utf-8")
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    assert rc == 0
+    assert output.read_text(encoding="utf-8") == "omni transcript\n"
