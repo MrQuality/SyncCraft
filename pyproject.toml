@@ -19,6 +19,9 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "-q --cov=synccraft --cov-report=term-missing --cov-fail-under=85"
+required_plugins = [
+  "pytest-cov>=5.0",
+]
 testpaths = ["tests"]
 markers = [
   "unit: fast pure-logic tests; mandatory for each PR",
