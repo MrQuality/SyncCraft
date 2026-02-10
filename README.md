@@ -76,6 +76,15 @@ python -m synccraft.cli \
   --output ./out/transcript.txt
 ```
 
+
+## Config examples
+
+Example YAML configurations are provided in `docs/config.examples.yaml` for:
+
+- minimal setup
+- chunked mode
+- env-var-friendly production deployment
+
 ## Error contract
 
 User-facing failures should be actionable and include:
