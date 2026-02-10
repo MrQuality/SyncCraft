@@ -67,6 +67,20 @@ python -m pytest -m contract --no-cov
 python scripts/check_changed_behavior_has_tests.py origin/main
 ```
 
+## Troubleshooting: missing `pytest-cov`
+
+If `pytest` fails with coverage-related argument or plugin errors (for example around `--cov`), install dev dependencies so `pytest-cov` is available:
+
+```bash
+python -m pip install -e .[dev]
+```
+
+You can verify plugin availability with:
+
+```bash
+python -m pytest --help | rg -- --cov
+```
+
 ## CLI usage
 
 ```bash

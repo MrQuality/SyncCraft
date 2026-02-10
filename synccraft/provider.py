@@ -46,3 +46,13 @@ class MockProviderAdapter:
                 )
             )
         return data
+
+    def get_max_audio_seconds(self) -> int | None:
+        """Return provider-side max duration limit when declared in payload."""
+        if not self.payload_file.exists():
+            return None
+        data = json.loads(self.payload_file.read_text(encoding="utf-8"))
+        limit = data.get("max_audio_seconds")
+        if isinstance(limit, int) and limit > 0:
+            return limit
+        return None

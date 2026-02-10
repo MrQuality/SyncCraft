@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from synccraft.errors import format_user_error
+from synccraft.media import WaveDurationExtractor, validate_audio_path, validate_image_path
 from synccraft.output import write_transcript
 from synccraft.provider import MockProviderAdapter
 
@@ -80,8 +81,8 @@ def _validate_path_exists(*, value: str, field_name: str) -> None:
 
 def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]) -> tuple[str, str]:
     """Validate required CLI and config inputs before execution."""
-    _validate_path_exists(value=image, field_name="image")
-    _validate_path_exists(value=audio, field_name="audio")
+    validate_image_path(image)
+    validate_audio_path(audio)
 
     provider_payload = config.get("provider_payload")
     output_path = config.get("output")
@@ -106,6 +107,37 @@ def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]
 
     _validate_path_exists(value=provider_payload, field_name="provider_payload")
     return str(provider_payload), str(output_path)
+
+
+def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
+    """Fail fast when the source duration exceeds provider limit without chunking."""
+    max_audio_seconds = adapter.get_max_audio_seconds()
+    if max_audio_seconds is None:
+        return
+
+    audio_seconds = WaveDurationExtractor().duration_seconds(audio)
+    if audio_seconds <= max_audio_seconds:
+        return
+
+    chunk_seconds = config.get("chunk_seconds")
+    chunking_configured = isinstance(chunk_seconds, int) and chunk_seconds > 0
+    if chunking_configured:
+        return
+
+    snippet = "audio:\n  chunk_seconds: 30\n  on_chunk_failure: abort"
+    raise ValueError(
+        format_user_error(
+            what=(
+                "audio duration exceeds provider limit with no chunking configured "
+                f"(duration={audio_seconds}s, provider_limit={max_audio_seconds}s)."
+            ),
+            why="provider rejected long-form audio unless chunking is enabled",
+            how_to_fix=(
+                "configure chunking in YAML, for example:\n"
+                f"{snippet}"
+            ),
+        )
+    )
 
 
 def _print_execution_summary(*, image: str, audio: str, config_path: str, output: str, provider_payload: str) -> None:
@@ -145,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         adapter = MockProviderAdapter(payload_file=provider_payload)
+        _validate_duration_against_provider_limit(audio=args.audio, config=config, adapter=adapter)
         result = adapter.transcribe(audio_path=args.audio)
         write_transcript(output_path=output_path, transcript=result["transcript"])
         return 0
