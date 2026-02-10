@@ -71,10 +71,17 @@ python scripts/check_changed_behavior_has_tests.py origin/main
 
 ```bash
 python -m synccraft.cli \
-  --audio tests/fixtures/audio/tone.wav \
-  --provider-payload tests/fixtures/provider/success.json \
-  --output ./out/transcript.txt
+  tests/fixtures/image/sample.png \
+  tests/fixtures/audio/tone.wav \
+  --config ./config.yaml
 ```
+
+Supported flags:
+
+- `--verbose` (INFO logging)
+- `--debug` (DEBUG logging; overrides verbose)
+- `--dry-run` (validate + print summary, no provider call)
+- `--version` (print version and exit immediately)
 
 
 ## Config examples
