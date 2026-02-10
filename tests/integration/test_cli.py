@@ -23,7 +23,7 @@ def test_cli_generates_output_file(tmp_path) -> None:
     payload.write_text(json.dumps({"transcript": "integration works", "confidence": 0.95}), encoding="utf-8")
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     cmd = [
         sys.executable,
@@ -46,7 +46,7 @@ def test_cli_invalid_image_path_exits_with_validation_error(tmp_path) -> None:
     payload.write_text(json.dumps({"transcript": "integration works", "confidence": 0.95}), encoding="utf-8")
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     cmd = [
         sys.executable,
@@ -69,7 +69,7 @@ def test_cli_dry_run_validates_and_skips_provider_execution(tmp_path) -> None:
     payload.write_text("not-json", encoding="utf-8")
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
 
     cmd = [
         sys.executable,
@@ -106,7 +106,7 @@ def test_cli_over_limit_without_chunking_returns_actionable_chunking_error(tmp_p
     )
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
-    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
     audio = tmp_path / "long.wav"
     _write_wav_with_duration(audio, seconds=15)
 
@@ -149,7 +149,7 @@ def test_cli_chunked_stop_policy_aborts_on_first_failed_chunk(tmp_path) -> None:
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"provider_payload: {payload}\n"
+        f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
         "chunk_seconds: 5\n"
         "on_chunk_failure: stop\n",
@@ -190,7 +190,7 @@ def test_cli_chunked_continue_policy_writes_successful_chunk_transcripts(tmp_pat
     output = tmp_path / "result.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
-        f"provider_payload: {payload}\n"
+        f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
         "chunk_seconds: 5\n"
         "on_chunk_failure: continue\n"
