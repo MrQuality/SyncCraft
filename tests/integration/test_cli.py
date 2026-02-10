@@ -7,6 +7,8 @@ import wave
 
 import pytest
 
+from synccraft import __version__
+
 
 def _write_wav_with_duration(path, *, seconds: int, frame_rate: int = 8000) -> None:
     """Create a deterministic silent WAV fixture for integration tests."""
@@ -94,8 +96,16 @@ def test_cli_version_flag_returns_immediately() -> None:
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     assert proc.returncode == 0
-    assert proc.stdout.strip() == "synccraft 0.1.0"
+    assert proc.stdout.strip() == f"synccraft {__version__}"
 
+
+@pytest.mark.integration
+def test_package_module_entrypoint_version_flag_returns_immediately() -> None:
+    cmd = [sys.executable, "-m", "synccraft", "--version"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    assert proc.returncode == 0
+    assert proc.stdout.strip() == f"synccraft {__version__}"
 
 @pytest.mark.integration
 def test_cli_over_limit_without_chunking_returns_actionable_chunking_error(tmp_path) -> None:
