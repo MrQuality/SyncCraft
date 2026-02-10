@@ -23,6 +23,17 @@ SyncCraft is a lightweight Python CLI foundation for media-transcript workflows 
   - Behavior-change test enforcement script: `scripts/check_changed_behavior_has_tests.py`
   - Contributor policy in `CONTRIBUTING.md`
 
+## Packaging and installation
+
+Build and installable package guidance (including runtime dependency and FFmpeg policy) is documented in [`docs/installation.md`](docs/installation.md).
+
+To validate a local install quickly:
+
+```bash
+python -m pip install -e .
+synccraft --version
+```
+
 ## Development setup
 
 ### Prerequisites
@@ -84,7 +95,7 @@ python -m pytest --help | rg -- --cov
 ## CLI usage
 
 ```bash
-python -m synccraft.cli \
+synccraft \
   tests/fixtures/image/sample.png \
   tests/fixtures/audio/tone.wav \
   --config ./config.yaml

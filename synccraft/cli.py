@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from synccraft import __version__
 from synccraft.chunking import ChunkMetadata, chunk_template_values, execute_chunk_plan, plan_chunks
 from synccraft.errors import (
     ConfigError,
@@ -27,7 +28,6 @@ from synccraft.output import write_transcript
 from synccraft.provider import MockProviderAdapter, ProviderAdapter, build_provider_adapter
 from synccraft.templating import render_filename
 
-_VERSION = "0.1.0"
 _ALLOWED_CHUNK_OUTPUT_PLACEHOLDERS = {"index", "start", "end", "audio_basename"}
 
 
@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run CLI command and return process status code."""
     raw_argv = argv if argv is not None else sys.argv[1:]
     if "--version" in raw_argv:
-        print(f"synccraft {_VERSION}")
+        print(f"synccraft {__version__}")
         return int(ExitCode.OK)
 
     parser = build_parser()

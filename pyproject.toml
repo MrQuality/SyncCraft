@@ -6,15 +6,35 @@ build-backend = "setuptools.build_meta"
 name = "synccraft"
 version = "0.1.0"
 description = "SyncCraft CLI utilities"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+  { name = "SyncCraft contributors" },
+]
 requires-python = ">=3.11"
 dependencies = [
   "PyYAML>=6.0",
 ]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Environment :: Console",
+  "Topic :: Multimedia :: Sound/Audio",
+]
+
+[project.scripts]
+synccraft = "synccraft.cli:main"
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2.2",
   "pytest>=8.0",
   "pytest-cov>=5.0",
+  "twine>=5.1.1",
 ]
 
 [tool.pytest.ini_options]
