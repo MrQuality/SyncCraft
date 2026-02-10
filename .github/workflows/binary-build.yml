@@ -33,9 +33,11 @@ jobs:
       - name: Build single-file binary
         run: pyinstaller --clean --noconfirm --onefile --name synccraft synccraft/__main__.py
       - name: Verify binary artifact exists
-        run: python -c "from pathlib import Path; assert Path(r'${{ matrix.binary_path }}').is_file()"
+        run: |
+          python -c "from pathlib import Path; p = Path(r'${{ matrix.binary_path }}'); print(f'checking artifact path: {p}'); assert p.is_file(), f'missing artifact: {p}'"
       - name: Verify binary version output
-        run: ${{ matrix.binary_path }} --version
+        run: |
+          python -c "import subprocess; subprocess.run([r'${{ matrix.binary_path }}', '--version'], check=True)"
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
