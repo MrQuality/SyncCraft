@@ -10,10 +10,12 @@ from typing import Any
 
 import yaml
 
+from synccraft.chunking import ChunkMetadata, chunk_template_values, execute_chunk_plan, plan_chunks
 from synccraft.errors import format_user_error
 from synccraft.media import WaveDurationExtractor, validate_audio_path, validate_image_path
 from synccraft.output import write_transcript
 from synccraft.provider import MockProviderAdapter
+from synccraft.templating import render_filename
 
 _VERSION = "0.1.0"
 
@@ -106,7 +108,63 @@ def _validate_execution_inputs(*, image: str, audio: str, config: dict[str, Any]
         )
 
     _validate_path_exists(value=provider_payload, field_name="provider_payload")
+    _validate_chunk_output_template_config(config=config, output_path=str(output_path))
     return str(provider_payload), str(output_path)
+
+
+def _validate_chunk_output_template_config(*, config: dict[str, Any], output_path: str) -> None:
+    """Fail fast on invalid chunk output template configuration."""
+    template = config.get("output_chunk_template")
+    if template is None:
+        return
+
+    if not isinstance(template, str) or not template.strip():
+        raise ValueError(
+            format_user_error(
+                what="output_chunk_template must be a non-empty string.",
+                why="chunk output file naming requires a valid template",
+                how_to_fix="set output_chunk_template to a string like '{stem}_{index}.{ext}'",
+            )
+        )
+
+    output = Path(output_path)
+    ext = output.suffix.lstrip(".")
+    stem = output.stem
+    try:
+        rendered = render_filename(
+            template,
+            stem=stem,
+            ext=ext,
+            index=0,
+            chunk_start=0,
+            chunk_end=1,
+        )
+        _validate_chunk_output_filename(filename=rendered)
+    except ValueError as exc:
+        raise ValueError(
+            format_user_error(
+                what="output_chunk_template is invalid.",
+                why=str(exc),
+                how_to_fix=(
+                    "use only known tokens: {stem}, {ext}, {index}, {chunk_start}, {chunk_end}; "
+                    "example '{stem}_{index}_{chunk_start}_{chunk_end}.{ext}'"
+                ),
+            )
+        ) from exc
+
+
+def _validate_chunk_output_filename(*, filename: str) -> None:
+    """Ensure rendered chunk output filename stays within output directory."""
+    candidate = Path(filename)
+    if candidate.is_absolute() or len(candidate.parts) != 1 or candidate.name in {"", ".", ".."}:
+        raise ValueError(
+            format_user_error(
+                what="output_chunk_template produced an unsafe path.",
+                why="chunk output files must be plain filenames under the output directory",
+                how_to_fix="remove path separators and traversal segments from output_chunk_template",
+            )
+        )
+
 
 
 def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
@@ -124,7 +182,7 @@ def _validate_duration_against_provider_limit(*, audio: str, config: dict[str, A
     if chunking_configured:
         return
 
-    snippet = "audio:\n  chunk_seconds: 30\n  on_chunk_failure: abort"
+    snippet = "audio:\n  chunk_seconds: 30\n  on_chunk_failure: stop"
     raise ValueError(
         format_user_error(
             what=(
@@ -148,6 +206,78 @@ def _print_execution_summary(*, image: str, audio: str, config_path: str, output
     print(f"  config: {config_path}")
     print(f"  provider_payload: {provider_payload}")
     print(f"  output: {output}")
+
+
+def _write_chunk_outputs_if_configured(
+    *,
+    output_path: str,
+    chunk_output_template: str | None,
+    chunk_results: list[tuple[ChunkMetadata, dict[str, Any]]],
+) -> None:
+    """Write optional per-chunk output files using deterministic chunk metadata."""
+    if not chunk_output_template:
+        return
+
+    output = Path(output_path)
+    ext = output.suffix.lstrip(".")
+    stem = output.stem
+
+    for chunk, payload in chunk_results:
+        filename = render_filename(
+            chunk_output_template,
+            stem=stem,
+            ext=ext,
+            **chunk_template_values(chunk=chunk),
+        )
+        _validate_chunk_output_filename(filename=filename)
+        write_transcript(output_path=output.parent / filename, transcript=payload["transcript"])
+
+
+def _run_chunked_transcription(*, audio_path: str, output_path: str, config: dict[str, Any], adapter: MockProviderAdapter) -> None:
+    """Execute chunked transcription flow with configurable failure policy."""
+    logger = logging.getLogger(__name__)
+    total_seconds = WaveDurationExtractor().duration_seconds(audio_path)
+    chunk_seconds = int(config["chunk_seconds"])
+    on_chunk_failure = str(config.get("on_chunk_failure", "stop"))
+    chunks = plan_chunks(total_seconds=total_seconds, chunk_seconds=chunk_seconds)
+
+    def _transcribe(chunk: ChunkMetadata) -> dict[str, Any]:
+        logger.info(
+            "Transcribing chunk index=%s start=%ss end=%ss",
+            chunk.index,
+            chunk.start_second,
+            chunk.end_second,
+        )
+        return adapter.transcribe(audio_path=audio_path, chunk=chunk)
+
+    result = execute_chunk_plan(chunks=chunks, transcribe_chunk=_transcribe, on_chunk_failure=on_chunk_failure)
+
+    if result.failures and on_chunk_failure == "stop":
+        failed_index = result.failures[0].chunk.index
+        raise ValueError(
+            format_user_error(
+                what=f"chunked transcription failed at chunk index {failed_index}.",
+                why="on_chunk_failure was set to stop and the provider returned an error",
+                how_to_fix="fix the provider/chunking issue or set on_chunk_failure: continue",
+            )
+        )
+
+    if not result.successes:
+        raise ValueError(
+            format_user_error(
+                what="chunked transcription produced no successful chunks.",
+                why="all chunk requests failed",
+                how_to_fix="check provider payload and chunk settings",
+            )
+        )
+
+    transcript = " ".join(payload["transcript"] for _, payload in result.successes).strip()
+    write_transcript(output_path=output_path, transcript=transcript)
+    _write_chunk_outputs_if_configured(
+        output_path=output_path,
+        chunk_output_template=config.get("output_chunk_template"),
+        chunk_results=result.successes,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -177,7 +307,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         adapter = MockProviderAdapter(payload_file=provider_payload)
+        adapter.validate_chunking_payload_schema()
         _validate_duration_against_provider_limit(audio=args.audio, config=config, adapter=adapter)
+
+        chunk_seconds = config.get("chunk_seconds")
+        chunking_configured = isinstance(chunk_seconds, int) and chunk_seconds > 0
+        if chunking_configured:
+            _run_chunked_transcription(audio_path=args.audio, output_path=output_path, config=config, adapter=adapter)
+            return 0
+
         result = adapter.transcribe(audio_path=args.audio)
         write_transcript(output_path=output_path, transcript=result["transcript"])
         return 0

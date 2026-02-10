@@ -127,7 +127,91 @@ def test_cli_over_limit_without_chunking_returns_actionable_chunking_error(tmp_p
         "how-to-fix: configure chunking in YAML, for example:\n"
         "audio:\n"
         "  chunk_seconds: 30\n"
-        "  on_chunk_failure: abort"
+        "  on_chunk_failure: stop"
     )
     assert proc.returncode == 2
     assert proc.stderr.strip() == expected
+
+
+@pytest.mark.integration
+def test_cli_chunked_stop_policy_aborts_on_first_failed_chunk(tmp_path) -> None:
+    payload = tmp_path / "provider.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "transcript": "fallback",
+                "chunk_transcripts": {"0": "zero", "1": "one", "2": "two"},
+                "fail_on_chunk_indices": [1],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "result.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider_payload: {payload}\n"
+        f"output: {output}\n"
+        "chunk_seconds: 5\n"
+        "on_chunk_failure: stop\n",
+        encoding="utf-8",
+    )
+    audio = tmp_path / "chunked.wav"
+    _write_wav_with_duration(audio, seconds=12)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "synccraft.cli",
+        "tests/fixtures/image/sample.png",
+        str(audio),
+        "--config",
+        str(config),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    assert proc.returncode == 2
+    assert "chunked transcription failed at chunk index 1" in proc.stderr
+    assert not output.exists()
+
+
+@pytest.mark.integration
+def test_cli_chunked_continue_policy_writes_successful_chunk_transcripts(tmp_path) -> None:
+    payload = tmp_path / "provider.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "transcript": "fallback",
+                "chunk_transcripts": {"0": "zero", "1": "one", "2": "two"},
+                "fail_on_chunk_indices": [1],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "result.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider_payload: {payload}\n"
+        f"output: {output}\n"
+        "chunk_seconds: 5\n"
+        "on_chunk_failure: continue\n"
+        "output_chunk_template: '{stem}_{index}_{chunk_start}_{chunk_end}.{ext}'\n",
+        encoding="utf-8",
+    )
+    audio = tmp_path / "chunked.wav"
+    _write_wav_with_duration(audio, seconds=12)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "synccraft.cli",
+        "tests/fixtures/image/sample.png",
+        str(audio),
+        "--config",
+        str(config),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    assert proc.returncode == 0, proc.stderr
+    assert output.read_text(encoding="utf-8") == "zero two\n"
+    assert (tmp_path / "result_0_0_5.txt").read_text(encoding="utf-8") == "zero\n"
+    assert (tmp_path / "result_2_10_12.txt").read_text(encoding="utf-8") == "two\n"

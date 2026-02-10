@@ -37,3 +37,43 @@ def test_mock_provider_contract_exposes_optional_duration_limit(tmp_path) -> Non
     adapter = MockProviderAdapter(payload_file=payload_path)
 
     assert adapter.get_max_audio_seconds() == 120
+
+
+@pytest.mark.contract
+def test_mock_provider_contract_supports_chunk_specific_behavior(tmp_path) -> None:
+    payload_path = tmp_path / "response.json"
+    payload_path.write_text(
+        json.dumps(
+            {
+                "transcript": "fallback",
+                "chunk_transcripts": {"0": "chunk zero"},
+                "fail_on_chunk_indices": [1],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    adapter = MockProviderAdapter(payload_file=payload_path)
+
+    class _Chunk:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+    ok = adapter.transcribe(audio_path="tests/fixtures/audio/tone.wav", chunk=_Chunk(index=0))
+    assert ok["transcript"] == "chunk zero"
+
+    with pytest.raises(ValueError, match="what: provider failed for chunk index 1"):
+        adapter.transcribe(audio_path="tests/fixtures/audio/tone.wav", chunk=_Chunk(index=1))
+
+
+@pytest.mark.contract
+def test_mock_provider_contract_validates_chunking_payload_schema(tmp_path) -> None:
+    payload_path = tmp_path / "response.json"
+    payload_path.write_text(
+        json.dumps({"transcript": "ok", "fail_on_chunk_indices": [0, 2], "chunk_transcripts": {"0": "a"}}),
+        encoding="utf-8",
+    )
+
+    adapter = MockProviderAdapter(payload_file=payload_path)
+
+    adapter.validate_chunking_payload_schema()

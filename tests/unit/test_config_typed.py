@@ -18,7 +18,7 @@ from synccraft.config import (
 @pytest.mark.parametrize(
     ("yaml_config", "cli_args", "expected_chunk_seconds", "expected_directory"),
     [
-        ({}, {}, 30, "./out"),
+        ({}, {}, None, "./out"),
         ({"audio": {"chunk_seconds": 45}, "output": {"directory": "./yaml-out"}}, {}, 45, "./yaml-out"),
         (
             {"audio": {"chunk_seconds": 45}, "output": {"directory": "./yaml-out"}},
@@ -32,7 +32,7 @@ from synccraft.config import (
 def test_precedence_matrix_defaults_yaml_cli(
     yaml_config: dict,
     cli_args: dict,
-    expected_chunk_seconds: int,
+    expected_chunk_seconds: int | None,
     expected_directory: str,
 ) -> None:
     merged = merge_typed_config(defaults=default_config(), yaml_config=yaml_config, cli_args=cli_args)
@@ -56,7 +56,7 @@ def test_execution_requirements_missing_audio_has_remediation_hint() -> None:
 def test_invalid_on_chunk_failure_has_remediation_hint() -> None:
     with pytest.raises(
         ValueError,
-        match="what: audio.on_chunk_failure must be one of: abort, continue, skip_chunk.*how-to-fix",
+        match="what: audio.on_chunk_failure must be one of: continue, stop.*how-to-fix",
     ):
         merge_typed_config(
             defaults=default_config(),

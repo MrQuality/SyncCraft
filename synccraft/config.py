@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from synccraft.errors import format_user_error
 
-_ALLOWED_CHUNK_FAILURE_POLICIES = {"abort", "skip_chunk", "continue"}
+_ALLOWED_CHUNK_FAILURE_POLICIES = {"stop", "continue"}
 _ALLOWED_FILENAME_PLACEHOLDERS = {"stem", "index", "ext", "chunk_start", "chunk_end"}
 _SECRET_FIELD_MARKERS = ("key", "token", "secret", "password", "credential")
 
@@ -26,8 +26,8 @@ class InputConfig:
 class AudioConfig:
     """Chunking and chunk-failure behavior configuration."""
 
-    chunk_seconds: int = 30
-    on_chunk_failure: str = "abort"
+    chunk_seconds: int | None = None
+    on_chunk_failure: str = "stop"
 
 
 @dataclass(slots=True)

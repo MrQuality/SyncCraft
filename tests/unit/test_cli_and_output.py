@@ -119,3 +119,116 @@ def test_provider_limit_validation_blocks_over_limit_without_chunking(tmp_path) 
     adapter = MockProviderAdapter(payload_file=payload)
     with pytest.raises(ValueError, match="what: audio duration exceeds provider limit with no chunking configured"):
         _validate_duration_against_provider_limit(audio=str(audio), config={}, adapter=adapter)
+
+
+@pytest.mark.unit
+def test_cli_main_fails_fast_on_invalid_output_chunk_template(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider_payload: {payload}\n"
+        f"output: {output}\n"
+        "output_chunk_template: 123\n",
+        encoding="utf-8",
+    )
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "output_chunk_template must be a non-empty string" in stderr
+
+
+@pytest.mark.unit
+def test_cli_main_fails_fast_on_invalid_fail_on_chunk_indices_schema(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok", "fail_on_chunk_indices": ["1"]}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "provider.fail_on_chunk_indices contains invalid values" in stderr
+
+
+@pytest.mark.unit
+def test_cli_main_fails_fast_on_invalid_chunk_transcripts_schema(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(
+        json.dumps({"transcript": "ok", "chunk_transcripts": {"first": "segment"}}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"provider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "provider.chunk_transcripts contains an invalid key" in stderr
+
+
+@pytest.mark.unit
+def test_cli_main_rejects_output_chunk_template_with_path_separator(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider_payload: {payload}\n"
+        f"output: {output}\n"
+        "output_chunk_template: '{stem}/chunk_{index}.{ext}'\n",
+        encoding="utf-8",
+    )
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "output_chunk_template produced an unsafe path" in stderr
+
+
+@pytest.mark.unit
+def test_cli_main_rejects_output_chunk_template_with_parent_traversal(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider_payload: {payload}\n"
+        f"output: {output}\n"
+        "output_chunk_template: '../chunk_{index}.{ext}'\n",
+        encoding="utf-8",
+    )
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "output_chunk_template produced an unsafe path" in stderr
