@@ -59,7 +59,7 @@ def test_cli_invalid_image_path_exits_with_validation_error(tmp_path) -> None:
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-    assert proc.returncode == 2
+    assert proc.returncode == 3
     assert "what:" in proc.stderr
 
 
@@ -129,7 +129,7 @@ def test_cli_over_limit_without_chunking_returns_actionable_chunking_error(tmp_p
         "  chunk_seconds: 30\n"
         "  on_chunk_failure: stop"
     )
-    assert proc.returncode == 2
+    assert proc.returncode == 3
     assert proc.stderr.strip() == expected
 
 
@@ -169,7 +169,7 @@ def test_cli_chunked_stop_policy_aborts_on_first_failed_chunk(tmp_path) -> None:
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-    assert proc.returncode == 2
+    assert proc.returncode == 5
     assert "chunked transcription failed at chunk index 1" in proc.stderr
     assert not output.exists()
 

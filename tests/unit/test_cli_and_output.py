@@ -8,6 +8,7 @@ import wave
 import pytest
 
 from synccraft.cli import _validate_duration_against_provider_limit, main
+from synccraft.errors import ValidationError
 from synccraft.output import write_transcript
 from synccraft.provider import MockProviderAdapter, OmniProviderAdapter, build_provider_adapter
 
@@ -60,7 +61,7 @@ def test_cli_main_handles_provider_error_with_user_message(tmp_path, capsys) -> 
     rc = main([str(image), str(audio), "--config", str(config)])
 
     stderr = capsys.readouterr().err
-    assert rc == 2
+    assert rc == 3
     assert "what:" in stderr and "why:" in stderr and "how-to-fix:" in stderr
 
 
@@ -117,7 +118,7 @@ def test_provider_limit_validation_blocks_over_limit_without_chunking(tmp_path) 
     payload.write_text(json.dumps({"transcript": "ok", "max_audio_seconds": 10}), encoding="utf-8")
 
     adapter = MockProviderAdapter(payload_file=payload)
-    with pytest.raises(ValueError, match="what: audio duration exceeds provider limit with no chunking configured"):
+    with pytest.raises(ValidationError, match="what: audio duration exceeds provider limit with no chunking configured"):
         _validate_duration_against_provider_limit(audio=str(audio), config={}, adapter=adapter)
 
 
@@ -128,7 +129,7 @@ def test_cli_main_fails_fast_on_invalid_output_chunk_template(tmp_path, capsys) 
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"fake")
     payload = tmp_path / "payload.json"
-    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    payload.write_text(json.dumps({"transcript": "ok", "confidence": 0.9}), encoding="utf-8")
     output = tmp_path / "output.txt"
     config = tmp_path / "config.yaml"
     config.write_text(
@@ -160,7 +161,7 @@ def test_cli_main_fails_fast_on_invalid_fail_on_chunk_indices_schema(tmp_path, c
     rc = main([str(image), str(audio), "--config", str(config)])
 
     stderr = capsys.readouterr().err
-    assert rc == 2
+    assert rc == 3
     assert "provider.fail_on_chunk_indices contains invalid values" in stderr
 
 
@@ -182,7 +183,7 @@ def test_cli_main_fails_fast_on_invalid_chunk_transcripts_schema(tmp_path, capsy
     rc = main([str(image), str(audio), "--config", str(config)])
 
     stderr = capsys.readouterr().err
-    assert rc == 2
+    assert rc == 3
     assert "provider.chunk_transcripts contains an invalid key" in stderr
 
 
@@ -283,3 +284,108 @@ def test_cli_main_uses_default_omni_provider_without_payload(tmp_path) -> None:
 
     assert rc == 0
     assert output.read_text(encoding="utf-8") == "omni transcript\n"
+
+
+@pytest.mark.unit
+def test_cli_progress_snapshot_default_mode(tmp_path, capsys) -> None:
+    """Default mode prints friendly progress events without timing details."""
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    expected_lines = [
+        "progress: loaded - inputs and configuration validated",
+        "progress: processing - starting transcription",
+        f"progress: saved - transcript saved to {output}",
+    ]
+    for line in expected_lines:
+        assert line in out
+    assert "timing:" not in out
+
+
+@pytest.mark.unit
+def test_cli_progress_snapshot_verbose_mode_includes_timing(tmp_path, capsys, monkeypatch) -> None:
+    """Verbose mode includes timing lines for loaded/processing/total phases."""
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(f"provider: mock\nprovider_payload: {payload}\noutput: {output}\n", encoding="utf-8")
+
+    counter = {"value": -0.1}
+    def _tick() -> float:
+        counter["value"] += 0.1
+        return round(counter["value"], 1)
+    monkeypatch.setattr("synccraft.cli.time.perf_counter", _tick)
+
+    rc = main([str(image), str(audio), "--config", str(config), "--verbose"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "timing: loaded=" in out
+    assert "timing: processing=" in out
+    assert "timing: total=" in out
+
+
+@pytest.mark.unit
+def test_cli_progress_snapshot_debug_mode_includes_chunk_metadata(tmp_path, capsys) -> None:
+    """Debug mode emits chunk metadata in chunked transcription paths."""
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "chunked.wav"
+    _write_wav_with_duration(audio, seconds=6)
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok", "confidence": 0.9}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider: mock\nprovider_payload: {payload}\noutput: {output}\nchunk_seconds: 3\n",
+        encoding="utf-8",
+    )
+
+    rc = main([str(image), str(audio), "--config", str(config), "--debug"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "chunk-meta: index=0 start=0s end=3s duration=3s" in out
+    assert "chunk-meta: index=1 start=3s end=6s duration=3s" in out
+
+
+@pytest.mark.unit
+def test_exit_code_categories_for_major_failure_types(tmp_path, capsys) -> None:
+    """CLI maps major fatal categories to deterministic non-zero exit codes."""
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok", "chunk_transcripts": {"0": "zero", "1": "one"}, "fail_on_chunk_indices": [0]}), encoding="utf-8")
+
+    config_missing_output = tmp_path / "config_missing_output.yaml"
+    config_missing_output.write_text(f"provider: mock\nprovider_payload: {payload}\n", encoding="utf-8")
+    assert main([str(image), str(audio), "--config", str(config_missing_output)]) == 2
+
+    assert main([str(tmp_path / 'missing.png'), str(audio), "--config", str(config_missing_output)]) == 3
+
+    config_processing = tmp_path / "config_processing.yaml"
+    config_processing.write_text(
+        f"provider: mock\nprovider_payload: {payload}\noutput: {tmp_path / 'out.txt'}\nchunk_seconds: 1\non_chunk_failure: stop\n",
+        encoding="utf-8",
+    )
+    _write_wav_with_duration(audio, seconds=2)
+    assert main([str(image), str(audio), "--config", str(config_processing)]) == 5
+    assert "how-to-fix:" in capsys.readouterr().err
