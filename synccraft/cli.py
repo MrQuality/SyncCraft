@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import string
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from synccraft.provider import MockProviderAdapter, ProviderAdapter, build_provi
 from synccraft.templating import render_filename
 
 _VERSION = "0.1.0"
+_ALLOWED_CHUNK_OUTPUT_PLACEHOLDERS = {"index", "start", "end", "audio_basename"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -125,21 +127,20 @@ def _validate_chunk_output_template_config(*, config: dict[str, Any], output_pat
             format_user_error(
                 what="output_chunk_template must be a non-empty string.",
                 why="chunk output file naming requires a valid template",
-                how_to_fix="set output_chunk_template to a string like '{stem}_{index}.{ext}'",
+                how_to_fix="set output_chunk_template to a string like '{audio_basename}_{index}_{start}_{end}.txt'",
             )
         )
 
-    output = Path(output_path)
-    ext = output.suffix.lstrip(".")
-    stem = output.stem
+    _validate_chunk_output_template_placeholders(template=template)
+
+    audio_basename = "audio"
     try:
         rendered = render_filename(
             template,
-            stem=stem,
-            ext=ext,
+            audio_basename=audio_basename,
             index=0,
-            chunk_start=0,
-            chunk_end=1,
+            start=0,
+            end=1,
         )
         _validate_chunk_output_filename(filename=rendered)
     except ValueError as exc:
@@ -148,11 +149,29 @@ def _validate_chunk_output_template_config(*, config: dict[str, Any], output_pat
                 what="output_chunk_template is invalid.",
                 why=str(exc),
                 how_to_fix=(
-                    "use only known tokens: {stem}, {ext}, {index}, {chunk_start}, {chunk_end}; "
-                    "example '{stem}_{index}_{chunk_start}_{chunk_end}.{ext}'"
+                    "use only known tokens: {index}, {start}, {end}, {audio_basename}; "
+                    "example '{audio_basename}_{index}_{start}_{end}.txt'"
                 ),
             )
         ) from exc
+
+
+def _validate_chunk_output_template_placeholders(*, template: str) -> None:
+    """Validate user-provided placeholders and provide fix guidance."""
+    formatter = string.Formatter()
+    for _, field_name, _, _ in formatter.parse(template):
+        if not field_name:
+            continue
+        token_name = field_name.split("!", 1)[0].split(":", 1)[0]
+        if token_name not in _ALLOWED_CHUNK_OUTPUT_PLACEHOLDERS:
+            allowed = ", ".join(sorted(_ALLOWED_CHUNK_OUTPUT_PLACEHOLDERS))
+            raise ValueError(
+                format_user_error(
+                    what=f"output_chunk_template uses unsupported placeholder '{token_name}'.",
+                    why="chunk output rendering supports only deterministic placeholder values",
+                    how_to_fix=f"replace it with one of: {allowed}",
+                )
+            )
 
 
 def _validate_chunk_output_filename(*, filename: str) -> None:
@@ -215,6 +234,7 @@ def _print_execution_summary(*, image: str, audio: str, config_path: str, output
 def _write_chunk_outputs_if_configured(
     *,
     output_path: str,
+    audio_path: str,
     chunk_output_template: str | None,
     chunk_results: list[tuple[ChunkMetadata, dict[str, Any]]],
 ) -> None:
@@ -223,18 +243,40 @@ def _write_chunk_outputs_if_configured(
         return
 
     output = Path(output_path)
-    ext = output.suffix.lstrip(".")
-    stem = output.stem
+    output.parent.mkdir(parents=True, exist_ok=True)
+    audio_basename = Path(audio_path).stem
+    allocated_names: dict[str, int] = {}
 
-    for chunk, payload in chunk_results:
+    for chunk, payload in sorted(chunk_results, key=lambda item: item[0].index):
         filename = render_filename(
             chunk_output_template,
-            stem=stem,
-            ext=ext,
+            audio_basename=audio_basename,
             **chunk_template_values(chunk=chunk),
         )
         _validate_chunk_output_filename(filename=filename)
-        write_transcript(output_path=output.parent / filename, transcript=payload["transcript"])
+        resolved_filename = _resolve_output_filename_collision(
+            base_filename=filename,
+            output_directory=output.parent,
+            allocated_names=allocated_names,
+        )
+        write_transcript(output_path=output.parent / resolved_filename, transcript=payload["transcript"])
+
+
+def _resolve_output_filename_collision(*, base_filename: str, output_directory: Path, allocated_names: dict[str, int]) -> str:
+    """Resolve collisions deterministically using numbered suffixes."""
+    base_path = Path(base_filename)
+    stem = base_path.stem
+    suffix = base_path.suffix
+
+    collision_index = allocated_names.get(base_filename, 0)
+    while True:
+        candidate = base_filename if collision_index == 0 else f"{stem}__{collision_index}{suffix}"
+        candidate_path = output_directory / candidate
+        if candidate not in allocated_names and not candidate_path.exists():
+            allocated_names[candidate] = 1
+            allocated_names[base_filename] = collision_index + 1
+            return candidate
+        collision_index += 1
 
 
 def _run_chunked_transcription(*, image_path: str, audio_path: str, output_path: str, config: dict[str, Any], adapter: ProviderAdapter) -> None:
@@ -279,6 +321,7 @@ def _run_chunked_transcription(*, image_path: str, audio_path: str, output_path:
     write_transcript(output_path=output_path, transcript=transcript)
     _write_chunk_outputs_if_configured(
         output_path=output_path,
+        audio_path=audio_path,
         chunk_output_template=config.get("output_chunk_template"),
         chunk_results=result.successes,
     )

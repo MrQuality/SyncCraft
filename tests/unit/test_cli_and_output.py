@@ -199,7 +199,7 @@ def test_cli_main_rejects_output_chunk_template_with_path_separator(tmp_path, ca
     config.write_text(
         f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
-        "output_chunk_template: '{stem}/chunk_{index}.{ext}'\n",
+        "output_chunk_template: '{audio_basename}/chunk_{index}.txt'\n",
         encoding="utf-8",
     )
 
@@ -223,7 +223,7 @@ def test_cli_main_rejects_output_chunk_template_with_parent_traversal(tmp_path, 
     config.write_text(
         f"provider: mock\nprovider_payload: {payload}\n"
         f"output: {output}\n"
-        "output_chunk_template: '../chunk_{index}.{ext}'\n",
+        "output_chunk_template: '../chunk_{index}.txt'\n",
         encoding="utf-8",
     )
 
@@ -233,6 +233,32 @@ def test_cli_main_rejects_output_chunk_template_with_parent_traversal(tmp_path, 
     assert rc == 2
     assert "output_chunk_template produced an unsafe path" in stderr
 
+
+
+
+@pytest.mark.unit
+def test_cli_main_rejects_output_chunk_template_with_unsupported_placeholder(tmp_path, capsys) -> None:
+    image = tmp_path / "image.png"
+    image.write_bytes(b"img")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"fake")
+    payload = tmp_path / "payload.json"
+    payload.write_text(json.dumps({"transcript": "ok"}), encoding="utf-8")
+    output = tmp_path / "output.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider: mock\nprovider_payload: {payload}\n"
+        f"output: {output}\n"
+        "output_chunk_template: '{audio_basename}_{chunk_start}.txt'\n",
+        encoding="utf-8",
+    )
+
+    rc = main([str(image), str(audio), "--config", str(config)])
+
+    stderr = capsys.readouterr().err
+    assert rc == 2
+    assert "unsupported placeholder 'chunk_start'" in stderr
+    assert "replace it with one of" in stderr
 
 @pytest.mark.unit
 def test_build_provider_adapter_defaults_to_omni() -> None:

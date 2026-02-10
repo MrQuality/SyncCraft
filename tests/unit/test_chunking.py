@@ -90,4 +90,4 @@ def test_execute_chunk_plan_continue_collects_failures() -> None:
 @pytest.mark.unit
 def test_chunk_template_values_exposes_metadata_for_naming() -> None:
     chunk = ChunkMetadata(index=2, start_second=60, end_second=90)
-    assert chunk_template_values(chunk=chunk) == {"index": 2, "chunk_start": 60, "chunk_end": 90}
+    assert chunk_template_values(chunk=chunk) == {"index": 2, "start": 60, "end": 90}
