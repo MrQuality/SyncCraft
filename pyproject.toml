@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synccraft"
+version = "0.1.0"
+description = "SyncCraft CLI utilities"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=synccraft --cov-report=term-missing --cov-fail-under=85"
+testpaths = ["tests"]
+markers = [
+  "unit: fast pure-logic tests; mandatory for each PR",
+  "integration: CLI/filesystem integration tests; mandatory before release merge",
+  "contract: provider adapter contract tests",
+]
