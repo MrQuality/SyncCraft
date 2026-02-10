@@ -96,7 +96,7 @@ def test_cli_main_version_flag_exits_immediately(capsys) -> None:
 
     out = capsys.readouterr().out
     assert rc == 0
-    assert out.strip() == "synccraft 0.1.0"
+    assert out.strip() == "synccraft 1.0.0"
 
 
 @pytest.mark.unit
