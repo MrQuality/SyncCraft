@@ -1,35 +1,27 @@
 # SyncCraft configuration examples.
 
-# 1) Minimal config (supply only runtime-required audio path).
+# 1) Minimal runnable config for CLI fixture flow.
 minimal:
-  input:
-    audio_path: ./media/sample.wav
+  provider: mock
+  provider_payload: ./tests/fixtures/provider/success.json
+  output: ./out/transcript.txt
 
 # 2) Chunked mode config with explicit failure policy and naming template.
 chunked_mode:
-  input:
-    audio_path: ./media/episode.wav
-  audio:
-    chunk_seconds: 20
-    on_chunk_failure: skip_chunk
-  output:
-    directory: ./out/chunked
-    filename_template: "{stem}_{chunk_start}_{chunk_end}.{ext}"
-  provider:
-    name: mock
+  chunk_seconds: 20
+  on_chunk_failure: continue
+  output: ./out/chunked/transcript.txt
+  output_chunk_template: "{audio_basename}_{index}_{start}_{end}.txt"
+  provider: mock
+  provider_payload: ./tests/fixtures/provider/success.json
 
 # 3) Env-var-friendly production config.
 # Keep placeholders as literal values and inject env vars at deploy/runtime layer.
 production_env_friendly:
-  input:
-    audio_path: "${SYNC_AUDIO_PATH}"
-  audio:
-    chunk_seconds: 30
-    on_chunk_failure: abort
-  output:
-    directory: "${SYNC_OUTPUT_DIR}"
-    filename_template: "{stem}_{index:04d}.{ext}"
-  provider:
-    name: "${SYNC_PROVIDER_NAME}"
+  provider: "${SYNC_PROVIDER_NAME:-omni}"
+  output: "${SYNC_OUTPUT_FILE:-./out/transcript.txt}"
+  chunk_seconds: 30
+  on_chunk_failure: stop
+  provider_params:
     api_key: "${SYNC_PROVIDER_API_KEY}"
     endpoint: "${SYNC_PROVIDER_ENDPOINT}"

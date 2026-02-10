@@ -260,3 +260,31 @@ Outcome: new provider versions can be shipped with zero user-facing CLI argument
 - [ ] Architecture doc reviewed and approved before first implementation branch.
 - [ ] Every new module maps to one documented responsibility above.
 - [ ] Dependency checks confirm no circular dependencies between `cli`, `domain`, `providers`.
+
+## Future provider extension guide (current codebase)
+
+The current repository keeps provider integration in `synccraft/provider.py` and wires adapters through `build_provider_adapter(config=...)`. To add another provider safely:
+
+1. Add a new adapter class implementing the `ProviderAdapter` protocol (`limits` and `generate`).
+2. Keep provider-specific authentication/request shaping inside the adapter; return provider-neutral fields (at minimum `transcript`).
+3. Register the new provider string in `build_provider_adapter` and keep existing provider keys backward compatible.
+4. Map provider failures to `format_user_error(...)` triads so CLI output remains actionable.
+5. Extend `tests/contract/test_provider_adapter.py` for the shared adapter contract and add integration tests that execute the CLI with the new provider config path.
+
+Suggested implementation skeleton:
+
+```python
+class NewProviderAdapter:
+    def limits(self) -> ProviderLimits:
+        return ProviderLimits(max_audio_seconds=...)
+
+    def generate(self, *, image: str | Path, audio_chunk: str | Path, params: dict[str, Any] | None = None, chunk: ChunkMetadata | None = None) -> dict[str, Any]:
+        ...  # provider SDK/API call
+        return {
+            "request_id": "...",
+            "transcript": "...",
+            "params": params or {},
+            "chunk_index": chunk.index if chunk else None,
+        }
+```
+
