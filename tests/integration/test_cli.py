@@ -194,7 +194,7 @@ def test_cli_chunked_continue_policy_writes_successful_chunk_transcripts(tmp_pat
         f"output: {output}\n"
         "chunk_seconds: 5\n"
         "on_chunk_failure: continue\n"
-        "output_chunk_template: '{stem}_{index}_{chunk_start}_{chunk_end}.{ext}'\n",
+        "output_chunk_template: '{audio_basename}_{index}_{start}_{end}.txt'\n",
         encoding="utf-8",
     )
     audio = tmp_path / "chunked.wav"
@@ -213,5 +213,51 @@ def test_cli_chunked_continue_policy_writes_successful_chunk_transcripts(tmp_pat
 
     assert proc.returncode == 0, proc.stderr
     assert output.read_text(encoding="utf-8") == "zero two\n"
-    assert (tmp_path / "result_0_0_5.txt").read_text(encoding="utf-8") == "zero\n"
-    assert (tmp_path / "result_2_10_12.txt").read_text(encoding="utf-8") == "two\n"
+    assert (tmp_path / "chunked_0_0_5.txt").read_text(encoding="utf-8") == "zero\n"
+    assert (tmp_path / "chunked_2_10_12.txt").read_text(encoding="utf-8") == "two\n"
+
+
+@pytest.mark.integration
+def test_cli_chunked_output_collisions_use_deterministic_suffixes(tmp_path) -> None:
+    payload = tmp_path / "provider.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "transcript": "fallback",
+                "chunk_transcripts": {"0": "zero", "1": "one", "2": "two"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "result.txt"
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"provider: mock\nprovider_payload: {payload}\n"
+        f"output: {output}\n"
+        "chunk_seconds: 5\n"
+        "on_chunk_failure: continue\n"
+        "output_chunk_template: '{audio_basename}.txt'\n",
+        encoding="utf-8",
+    )
+    audio = tmp_path / "chunked.wav"
+    _write_wav_with_duration(audio, seconds=12)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "synccraft.cli",
+        "tests/fixtures/image/sample.png",
+        str(audio),
+        "--config",
+        str(config),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    assert proc.returncode == 0, proc.stderr
+    expected_files = [tmp_path / "chunked.txt", tmp_path / "chunked__1.txt", tmp_path / "chunked__2.txt"]
+    assert [path.name for path in expected_files if path.exists()] == [
+        "chunked.txt",
+        "chunked__1.txt",
+        "chunked__2.txt",
+    ]
+    assert [path.read_text(encoding="utf-8") for path in expected_files] == ["zero\n", "one\n", "two\n"]

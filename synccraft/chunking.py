@@ -81,8 +81,8 @@ def chunk_template_values(*, chunk: ChunkMetadata) -> dict[str, int]:
     """Expose chunk metadata fields used by logging and output naming."""
     return {
         "index": chunk.index,
-        "chunk_start": chunk.start_second,
-        "chunk_end": chunk.end_second,
+        "start": chunk.start_second,
+        "end": chunk.end_second,
     }
 
 
